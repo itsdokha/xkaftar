@@ -2118,34 +2118,7 @@ class _ConversationPane extends StatelessWidget {
                           ],
                         ),
             ),
-            Builder(
-              builder: (context) {
-                final typingText = controller.typingTextForChat(selectedChat);
-                if (typingText == null) {
-                  return const SizedBox(height: 8);
-                }
-                return Padding(
-                  padding: const EdgeInsets.only(left: 12, top: 4, bottom: 6),
-                  child: Row(
-                    children: [
-                      const _TypingDots(),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          typingText,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: const Color(0xFF67D1A9),
-                                fontWeight: FontWeight.w500,
-                              ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+            const SizedBox(height: 8),
             Container(
               padding: EdgeInsets.all(compactLayout ? 4 : 6),
               decoration: BoxDecoration(
@@ -3925,59 +3898,3 @@ class _VoiceRoomPanel extends StatelessWidget {
   }
 }
 
-class _TypingDots extends StatefulWidget {
-  const _TypingDots();
-
-  @override
-  State<_TypingDots> createState() => _TypingDotsState();
-}
-
-class _TypingDotsState extends State<_TypingDots> with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(3, (index) {
-            final delay = index * 0.2;
-            final value = ((_controller.value - delay) % 1.0).clamp(0.0, 1.0);
-            final opacity = (value < 0.5 ? value * 2 : 2 - value * 2).clamp(0.3, 1.0);
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 1.5),
-              child: Opacity(
-                opacity: opacity,
-                child: Container(
-                  width: 5,
-                  height: 5,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF67D1A9),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-            );
-          }),
-        );
-      },
-    );
-  }
-}

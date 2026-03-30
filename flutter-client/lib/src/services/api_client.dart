@@ -63,6 +63,7 @@ class ApiClient {
 
   final String _baseUrl;
   final http.Client _httpClient = http.Client();
+  final Map<String, Future<LinkPreviewResult?>> _linkPreviewCache = <String, Future<LinkPreviewResult?>>{};
   String? _accessToken;
   String? _refreshToken;
   Future<void> Function(String message)? onSessionInvalid;
@@ -420,6 +421,20 @@ class ApiClient {
   }
 
   Future<LinkPreviewResult?> fetchLinkPreview(String url) async {
+    final normalizedUrl = url.trim();
+    if (normalizedUrl.isEmpty) {
+      return null;
+    }
+    final cached = _linkPreviewCache[normalizedUrl];
+    if (cached != null) {
+      return cached;
+    }
+    final future = _fetchLinkPreviewUncached(normalizedUrl);
+    _linkPreviewCache[normalizedUrl] = future;
+    return future;
+  }
+
+  Future<LinkPreviewResult?> _fetchLinkPreviewUncached(String url) async {
     try {
       final response = await _send(
         'POST',
@@ -429,7 +444,9 @@ class ApiClient {
       final data = _unwrapJsonObject(response);
       final title = data['title'] as String?;
       final description = data['description'] as String?;
-      if (title == null && description == null) return null;
+      if (title == null && description == null) {
+        return null;
+      }
       return LinkPreviewResult(
         url: data['url'] as String? ?? url,
         title: title,
