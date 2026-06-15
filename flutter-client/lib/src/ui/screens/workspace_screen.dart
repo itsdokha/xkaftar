@@ -15,6 +15,7 @@ import '../../state/app_controller.dart';
 import '../widgets/cached_network_media.dart';
 import '../widgets/chat_list_tile.dart';
 import '../widgets/message_bubble.dart';
+import '../widgets/triangle_video_recorder_sheet.dart';
 
 class WorkspaceScreen extends StatefulWidget {
   const WorkspaceScreen({super.key, required this.controller});
@@ -188,6 +189,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                         onScrollToBottom: () => _scheduleScrollToBottom(force: true),
                         onSubmitMessage: _submitMessage,
                         onSendImage: _pickAndSendImage,
+                        onSendTriangleVideo: _pickAndSendTriangleVideo,
                         onOpenImage: _openImagePreview,
                         onReplyToMessage: _setReplyTarget,
                         onClearReply: _clearReplyTarget,
@@ -734,6 +736,35 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       _clearReplyTarget();
       _focusComposer();
     }
+  }
+
+  Future<void> _pickAndSendTriangleVideo() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return FractionallySizedBox(
+          heightFactor: 0.92,
+          child: TriangleVideoRecorderSheet(
+            onSubmit: (bytes, filename) async {
+              final sent = await widget.controller.sendTriangleVideoMessage(
+                bytes: bytes,
+                filename: filename,
+                body: messageController.text,
+                replyToMessageId: replyTarget?.id,
+              );
+              if (sent) {
+                messageController.clear();
+                _clearReplyTarget();
+                _focusComposer();
+              }
+              return sent;
+            },
+          ),
+        );
+      },
+    );
   }
 
   void _setReplyTarget(MessageModel message) {
@@ -1617,6 +1648,7 @@ class _ConversationPane extends StatelessWidget {
     required this.onScrollToBottom,
     required this.onSubmitMessage,
     required this.onSendImage,
+    required this.onSendTriangleVideo,
     required this.onOpenImage,
     required this.onReplyToMessage,
     required this.onClearReply,
@@ -1646,6 +1678,7 @@ class _ConversationPane extends StatelessWidget {
   final VoidCallback onScrollToBottom;
   final Future<void> Function() onSubmitMessage;
   final Future<void> Function() onSendImage;
+  final Future<void> Function() onSendTriangleVideo;
   final void Function(String imageUrl) onOpenImage;
   final void Function(MessageModel message) onReplyToMessage;
   final VoidCallback onClearReply;
@@ -2065,7 +2098,7 @@ class _ConversationPane extends StatelessWidget {
                                       ? () => onOpenImage(message.imageUrl!)
                                       : null,
                                   onMediaLoaded: (message.imageUrl ?? '').isNotEmpty ? onMessageMediaLoaded : null,
-                                  onRetry: message.localState == MessageLocalState.failed
+                                  onRetry: message.localState == MessageLocalState.failed && controller.canRetryMessage(message)
                                       ? () => controller.retryFailedMessage(message.id)
                                       : null,
                                   onShowReadReceipts: isOwn && selectedChat.type == 'group' && message.localState == MessageLocalState.none
@@ -2178,9 +2211,13 @@ class _ConversationPane extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  (replyTarget!.imageUrl ?? '').isNotEmpty
-                                      ? (replyTarget!.body.isNotEmpty ? 'Photo - ${replyTarget!.body}' : 'Photo')
-                                      : replyTarget!.body,
+                                  replyTarget!.isTriangleVideo
+                                      ? (replyTarget!.body.isNotEmpty && replyTarget!.body != 'Triangle video'
+                                          ? 'Triangle video - ${replyTarget!.body}'
+                                          : 'Triangle video')
+                                      : (replyTarget!.imageUrl ?? '').isNotEmpty
+                                          ? (replyTarget!.body.isNotEmpty ? 'Photo - ${replyTarget!.body}' : 'Photo')
+                                          : replyTarget!.body,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -2206,6 +2243,12 @@ class _ConversationPane extends StatelessWidget {
                         tooltip: 'Send image',
                         icon: const Icon(Icons.add_photo_alternate_outlined),
                       ),
+                      const SizedBox(width: 4),
+                      _TriangleComposerButton(
+                        enabled: !isReadOnlySystemChat,
+                        onPressed: onSendTriangleVideo,
+                      ),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Focus(
                           onKeyEvent: (node, event) {
@@ -2374,6 +2417,69 @@ class _ConversationPane extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+class _TriangleComposerButton extends StatelessWidget {
+  const _TriangleComposerButton({
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  final bool enabled;
+  final Future<void> Function() onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final iconColor = enabled ? const Color(0xFFE6EDF5) : const Color(0xFF66707A);
+    return IconButton(
+      onPressed: enabled ? () => unawaited(onPressed()) : null,
+      tooltip: 'Record triangle video',
+      icon: CustomPaint(
+        size: const Size(18, 18),
+        painter: _TriangleComposerGlyphPainter(
+          color: iconColor,
+        ),
+      ),
+    );
+  }
+}
+
+class _TriangleComposerGlyphPainter extends CustomPainter {
+  const _TriangleComposerGlyphPainter({
+    required this.color,
+  });
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(size.width / 2, size.height * 0.14)
+      ..lineTo(size.width * 0.84, size.height * 0.82)
+      ..lineTo(size.width * 0.16, size.height * 0.82)
+      ..close();
+
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.7
+      ..strokeJoin = StrokeJoin.round;
+    final accent = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    canvas.drawPath(path, stroke);
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height * 0.42),
+      1.45,
+      accent,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _TriangleComposerGlyphPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }
 

@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from app.api.dependencies import DbSession, get_current_user
+from app.domain.enums import MessageKind
 from app.schemas.chat import (
     AddMemberRequest,
     ChatRead,
@@ -609,6 +610,61 @@ async def create_image_message(
         logger.warning("Image message conflict chat_id=%s user_id=%s detail=%s", chat_id, current_user.id, error)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     logger.info("Image message created chat_id=%s user_id=%s message_id=%s filename=%s", chat_id, current_user.id, message.id, file.filename)
+    await connection_manager.broadcast(
+        [member.user.id for member in chat.members],
+        {"event": "message_created", "data": message.model_dump(mode="json")},
+    )
+    await _broadcast_chat_state(service, chat.id, [member.user.id for member in chat.members], "chat_updated")
+    try:
+        await PushNotificationService(session).send_message_notifications(
+            chat=chat,
+            message=message,
+            sender_user_id=current_user.id,
+        )
+    except Exception:
+        logger.exception("Push notifications failed chat_id=%s message_id=%s", chat_id, message.id)
+    return message
+
+
+@router.post("/{chat_id}/triangle-videos", response_model=MessageRead, status_code=status.HTTP_201_CREATED)
+async def create_triangle_video_message(
+    chat_id: str,
+    session: DbSession,
+    current_user: Annotated[object, Depends(get_current_user)],
+    file: UploadFile = File(...),
+    body: str = Form(default=""),
+    reply_to_message_id: str | None = Form(default=None),
+    client_message_id: str | None = Form(default=None),
+) -> MessageRead:
+    service = ChatService(session)
+    try:
+        video_url = await StorageService().save_message_video(file, current_user.id)
+        message = await service.create_message(
+            chat_id,
+            current_user.id,
+            body,
+            video_url=video_url,
+            kind=MessageKind.TRIANGLE_VIDEO,
+            reply_to_message_id=reply_to_message_id,
+            client_message_id=client_message_id,
+        )
+        chat = await service.get_chat(chat_id, current_user.id)
+    except NotFoundError as error:
+        logger.warning("Triangle video failed chat_id=%s user_id=%s detail=%s", chat_id, current_user.id, error)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except AuthorizationError as error:
+        logger.warning("Triangle video forbidden chat_id=%s user_id=%s detail=%s", chat_id, current_user.id, error)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
+    except ConflictError as error:
+        logger.warning("Triangle video conflict chat_id=%s user_id=%s detail=%s", chat_id, current_user.id, error)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    logger.info(
+        "Triangle video created chat_id=%s user_id=%s message_id=%s filename=%s",
+        chat_id,
+        current_user.id,
+        message.id,
+        file.filename,
+    )
     await connection_manager.broadcast(
         [member.user.id for member in chat.members],
         {"event": "message_created", "data": message.model_dump(mode="json")},

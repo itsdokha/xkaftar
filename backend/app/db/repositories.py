@@ -133,6 +133,18 @@ class PushDeviceTokenRepository:
         await self.session.flush()
         return True
 
+    async def delete_many_by_tokens(self, tokens: Sequence[str]) -> int:
+        if not tokens:
+            return 0
+        result = await self.session.execute(
+            select(PushDeviceToken).where(PushDeviceToken.token.in_(list(tokens)))
+        )
+        existing = result.scalars().all()
+        for item in existing:
+            await self.session.delete(item)
+        await self.session.flush()
+        return len(existing)
+
     async def list_for_user_ids(self, user_ids: Sequence[str]) -> list[PushDeviceToken]:
         if not user_ids:
             return []
@@ -336,6 +348,7 @@ class MessageRepository:
         sender_id: str,
         body: str,
         image_url: str | None = None,
+        video_url: str | None = None,
         reply_to_message_id: str | None = None,
         kind: MessageKind = MessageKind.USER,
         client_message_id: str | None = None,
@@ -347,6 +360,7 @@ class MessageRepository:
             kind=kind,
             body=body,
             image_url=image_url,
+            video_url=video_url,
             reply_to_message_id=reply_to_message_id,
         )
         self.session.add(message)

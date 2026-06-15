@@ -9,6 +9,7 @@ def message_reply_to_schema(message: Message) -> MessageReplyRead:
             "sender": message.sender,
             "body": message.body,
             "image_url": message.image_url,
+            "video_url": message.video_url,
             "created_at": message.created_at,
             "kind": message.kind,
         }
@@ -26,6 +27,7 @@ def message_to_schema(message: Message) -> MessageRead:
             "sender": message.sender,
             "body": message.body,
             "image_url": message.image_url,
+            "video_url": message.video_url,
             "created_at": message.created_at,
             "kind": message.kind,
             "reply_to": message_reply_to_schema(message.reply_to) if message.reply_to is not None else None,

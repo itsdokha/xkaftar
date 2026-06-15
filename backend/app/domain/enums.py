@@ -20,3 +20,4 @@ class ChatRole(StrEnum):
 class MessageKind(StrEnum):
     USER = "user"
     SYSTEM = "system"
+    TRIANGLE_VIDEO = "triangle_video"

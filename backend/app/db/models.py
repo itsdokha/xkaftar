@@ -136,6 +136,7 @@ class Message(Base):
     )
     body: Mapped[str] = mapped_column(Text(), default="")
     image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    video_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

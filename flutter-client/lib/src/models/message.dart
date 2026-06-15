@@ -9,6 +9,7 @@ class MessageReplyModel {
     required this.createdAt,
     this.kind = 'user',
     this.imageUrl,
+    this.videoUrl,
   });
 
   factory MessageReplyModel.fromJson(Map<String, dynamic> json) {
@@ -19,6 +20,7 @@ class MessageReplyModel {
       createdAt: parseDateTime(json['created_at']) ?? DateTime.now(),
       kind: json['kind'] as String? ?? 'user',
       imageUrl: json['image_url'] as String?,
+      videoUrl: json['video_url'] as String?,
     );
   }
 
@@ -28,6 +30,7 @@ class MessageReplyModel {
   final DateTime createdAt;
   final String kind;
   final String? imageUrl;
+  final String? videoUrl;
 
   MessageReplyModel copyWith({
     String? id,
@@ -36,6 +39,7 @@ class MessageReplyModel {
     DateTime? createdAt,
     String? kind,
     String? imageUrl,
+    String? videoUrl,
   }) {
     return MessageReplyModel(
       id: id ?? this.id,
@@ -44,6 +48,7 @@ class MessageReplyModel {
       createdAt: createdAt ?? this.createdAt,
       kind: kind ?? this.kind,
       imageUrl: imageUrl ?? this.imageUrl,
+      videoUrl: videoUrl ?? this.videoUrl,
     );
   }
 }
@@ -89,6 +94,7 @@ class MessageModel {
     required this.createdAt,
     this.kind = 'user',
     this.imageUrl,
+    this.videoUrl,
     this.replyTo,
     this.reactions = const [],
     this.localState = MessageLocalState.none,
@@ -104,6 +110,7 @@ class MessageModel {
       createdAt: parseDateTime(json['created_at']) ?? DateTime.now(),
       kind: json['kind'] as String? ?? 'user',
       imageUrl: json['image_url'] as String?,
+      videoUrl: json['video_url'] as String?,
       replyTo: json['reply_to'] is Map<String, dynamic>
           ? MessageReplyModel.fromJson(json['reply_to'] as Map<String, dynamic>)
           : null,
@@ -123,12 +130,16 @@ class MessageModel {
   final DateTime createdAt;
   final String kind;
   final String? imageUrl;
+  final String? videoUrl;
   final MessageReplyModel? replyTo;
   final List<MessageReactionModel> reactions;
   final MessageLocalState localState;
   final int localRetryCount;
 
   bool get isSystem => kind == 'system';
+  bool get hasImage => (imageUrl ?? '').isNotEmpty;
+  bool get hasVideo => (videoUrl ?? '').isNotEmpty;
+  bool get isTriangleVideo => kind == 'triangle_video';
 
   MessageModel copyWith({
     String? id,
@@ -138,6 +149,7 @@ class MessageModel {
     DateTime? createdAt,
     String? kind,
     String? imageUrl,
+    String? videoUrl,
     MessageReplyModel? replyTo,
     List<MessageReactionModel>? reactions,
     MessageLocalState? localState,
@@ -151,6 +163,7 @@ class MessageModel {
       createdAt: createdAt ?? this.createdAt,
       kind: kind ?? this.kind,
       imageUrl: imageUrl ?? this.imageUrl,
+      videoUrl: videoUrl ?? this.videoUrl,
       replyTo: replyTo ?? this.replyTo,
       reactions: reactions ?? this.reactions,
       localState: localState ?? this.localState,

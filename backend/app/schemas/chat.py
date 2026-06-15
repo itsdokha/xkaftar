@@ -19,6 +19,7 @@ class MessageReplyRead(BaseModel):
     sender: UserRead
     body: str
     image_url: str | None = None
+    video_url: str | None = None
     created_at: datetime
     kind: MessageKind = MessageKind.USER
 
@@ -39,6 +40,7 @@ class MessageRead(BaseModel):
     sender: UserRead
     body: str
     image_url: str | None = None
+    video_url: str | None = None
     created_at: datetime
     kind: MessageKind = MessageKind.USER
     reply_to: MessageReplyRead | None = None

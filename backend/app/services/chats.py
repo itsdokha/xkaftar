@@ -325,6 +325,8 @@ class ChatService:
         current_user_id: str,
         body: str,
         image_url: str | None = None,
+        video_url: str | None = None,
+        kind: MessageKind = MessageKind.USER,
         reply_to_message_id: str | None = None,
         client_message_id: str | None = None,
     ) -> MessageRead:
@@ -365,9 +367,9 @@ class ChatService:
                     normalized_client_message_id,
                 )
                 return message_to_schema(existing_message)
-        if not normalized_body and image_url is None:
+        if not normalized_body and image_url is None and video_url is None:
             logger.warning("Message creation rejected as empty chat_id=%s actor_id=%s", chat_id, current_user_id)
-            raise ConflictError("Message body or image is required")
+            raise ConflictError("Message body, image, or video is required")
         if reply_to_message_id is not None:
             reply_target = await self.messages.get_by_id(reply_to_message_id)
             if (
@@ -388,6 +390,8 @@ class ChatService:
             sender_id=current_user_id,
             body=normalized_body,
             image_url=image_url,
+            video_url=video_url,
+            kind=kind,
             reply_to_message_id=reply_to_message_id,
             client_message_id=normalized_client_message_id,
         )
@@ -397,11 +401,13 @@ class ChatService:
         await self.session.commit()
         refreshed_message = (await self.messages.list_for_chat(chat_id, limit=1))[0]
         logger.info(
-            "Message stored chat_id=%s actor_id=%s message_id=%s has_image=%s reply_to_message_id=%s",
+            "Message stored chat_id=%s actor_id=%s message_id=%s kind=%s has_image=%s has_video=%s reply_to_message_id=%s",
             chat_id,
             current_user_id,
             refreshed_message.id,
+            kind,
             image_url is not None,
+            video_url is not None,
             reply_to_message_id,
         )
         return message_to_schema(refreshed_message)

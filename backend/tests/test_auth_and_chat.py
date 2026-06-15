@@ -78,3 +78,13 @@ async def test_register_login_and_direct_chat():
             )
             assert photo.status_code == 201
             assert photo.json()["image_url"].startswith("/media/message-images/")
+
+            triangle_video = await client.post(
+                f"/chats/{chat_id}/triangle-videos",
+                headers=headers,
+                data={"body": "Watch this"},
+                files={"file": ("triangle.mp4", b"fake-video-data", "video/mp4")},
+            )
+            assert triangle_video.status_code == 201
+            assert triangle_video.json()["kind"] == "triangle_video"
+            assert triangle_video.json()["video_url"].startswith("/media/message-videos/")

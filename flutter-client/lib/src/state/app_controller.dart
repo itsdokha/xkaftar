@@ -448,7 +448,9 @@ class AppController extends ChangeNotifier with WidgetsBindingObserver {
     final pendingMessage = _createPendingMessage(
       chatId: chatId,
       body: body.trim(),
+      kind: 'user',
       imageUrl: null,
+      videoUrl: null,
       replyToMessageId: replyToMessageId,
     );
     _insertPendingMessage(pendingMessage);
@@ -480,7 +482,9 @@ class AppController extends ChangeNotifier with WidgetsBindingObserver {
     final pendingMessage = _createPendingMessage(
       chatId: chatId,
       body: body.trim().isEmpty ? 'Photo' : body.trim(),
+      kind: 'user',
       imageUrl: null,
+      videoUrl: null,
       replyToMessageId: replyToMessageId,
     );
     _insertPendingMessage(pendingMessage);
@@ -489,6 +493,42 @@ class AppController extends ChangeNotifier with WidgetsBindingObserver {
       _sendOutgoingMessage(
         pendingMessage.id,
         () => api.sendImageMessage(
+          chatId,
+          bytes: bytes,
+          filename: filename,
+          body: body.trim(),
+          replyToMessageId: replyToMessageId,
+          clientMessageId: pendingMessage.id,
+        ),
+      ),
+    );
+    return true;
+  }
+
+  Future<bool> sendTriangleVideoMessage({
+    required List<int> bytes,
+    required String filename,
+    String body = '',
+    String? replyToMessageId,
+  }) async {
+    final chatId = selectedChatId;
+    if (chatId == null || composerSending) {
+      return false;
+    }
+    final pendingMessage = _createPendingMessage(
+      chatId: chatId,
+      body: body.trim().isEmpty ? 'Triangle video' : body.trim(),
+      kind: 'triangle_video',
+      imageUrl: null,
+      videoUrl: null,
+      replyToMessageId: replyToMessageId,
+    );
+    _insertPendingMessage(pendingMessage);
+    _stopTyping();
+    unawaited(
+      _sendOutgoingMessage(
+        pendingMessage.id,
+        () => api.sendTriangleVideoMessage(
           chatId,
           bytes: bytes,
           filename: filename,
@@ -536,7 +576,7 @@ class AppController extends ChangeNotifier with WidgetsBindingObserver {
 
   void retryFailedMessage(String messageId) {
     final message = _messageById(messageId);
-    if (message == null || message.localState != MessageLocalState.failed) {
+    if (message == null || message.localState != MessageLocalState.failed || !canRetryMessage(message)) {
       return;
     }
     errorMessage = null;
@@ -1138,6 +1178,12 @@ class AppController extends ChangeNotifier with WidgetsBindingObserver {
     final prefix = currentUser != null && lastMessage.sender.id == currentUser!.id
         ? 'You'
         : lastMessage.sender.displayName;
+    if (lastMessage.isTriangleVideo && lastMessage.body.isNotEmpty && lastMessage.body != 'Triangle video') {
+      return '$prefix: Triangle video - ${lastMessage.body}';
+    }
+    if (lastMessage.isTriangleVideo) {
+      return '$prefix: Triangle video';
+    }
     if ((lastMessage.imageUrl ?? '').isNotEmpty && lastMessage.body.isNotEmpty) {
       return '$prefix: Photo - ${lastMessage.body}';
     }
@@ -1698,7 +1744,9 @@ class AppController extends ChangeNotifier with WidgetsBindingObserver {
   MessageModel _createPendingMessage({
     required String chatId,
     required String body,
+    required String kind,
     required String? imageUrl,
+    required String? videoUrl,
     required String? replyToMessageId,
   }) {
     final current = currentUser!;
@@ -1715,7 +1763,9 @@ class AppController extends ChangeNotifier with WidgetsBindingObserver {
       sender: current,
       body: body,
       createdAt: now,
+      kind: kind,
       imageUrl: imageUrl,
+      videoUrl: videoUrl,
       replyTo: replySource == null
           ? null
           : MessageReplyModel(
@@ -1725,6 +1775,7 @@ class AppController extends ChangeNotifier with WidgetsBindingObserver {
               createdAt: replySource.createdAt,
               kind: replySource.kind,
               imageUrl: replySource.imageUrl,
+              videoUrl: replySource.videoUrl,
             ),
       localState: MessageLocalState.sending,
       localRetryCount: 0,
@@ -1864,13 +1915,19 @@ class AppController extends ChangeNotifier with WidgetsBindingObserver {
         continue;
       }
       final sameBody = message.body.trim() == deliveredMessage.body.trim();
+      final sameKind = message.kind == deliveredMessage.kind;
       final sameImagePresence = (message.imageUrl ?? '').isNotEmpty == (deliveredMessage.imageUrl ?? '').isNotEmpty;
+      final sameVideoPresence = (message.videoUrl ?? '').isNotEmpty == (deliveredMessage.videoUrl ?? '').isNotEmpty;
       final closeInTime = message.createdAt.difference(deliveredMessage.createdAt).inSeconds.abs() <= 30;
-      if (sameBody && sameImagePresence && closeInTime) {
+      if (sameBody && sameKind && sameImagePresence && sameVideoPresence && closeInTime) {
         return message;
       }
     }
     return null;
+  }
+
+  bool canRetryMessage(MessageModel message) {
+    return !message.hasImage && !message.hasVideo && !message.isTriangleVideo;
   }
 
   void _markChatUnreadCount(String chatId, int unreadCount) {
@@ -2088,7 +2145,9 @@ class AppController extends ChangeNotifier with WidgetsBindingObserver {
       await _pushNotifications.showChatMessageNotification(
         chatId: message.chatId,
         title: title,
-        body: body,
+        body: message.isTriangleVideo
+            ? (message.body.trim().isEmpty ? 'Triangle video' : 'Triangle video • ${message.body.trim()}')
+            : body,
       );
     } catch (_) {}
   }

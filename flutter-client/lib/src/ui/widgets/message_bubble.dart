@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../models/message.dart';
 import '../../services/api_client.dart';
@@ -168,9 +169,16 @@ class MessageBubble extends StatelessWidget {
                 onLoaded: onMediaLoaded,
               ),
             ),
-          if ((message.imageUrl ?? '').isNotEmpty && message.body.isNotEmpty)
+          if (message.isTriangleVideo)
+            _TriangleVideoTile(
+              videoUrl: message.videoUrl,
+              isOwn: isOwn,
+              caption: message.hasVideo ? 'Tap to play' : 'Uploading video...',
+              onLoaded: onMediaLoaded,
+            ),
+          if (((message.imageUrl ?? '').isNotEmpty || message.isTriangleVideo) && message.body.isNotEmpty)
             const SizedBox(height: 7),
-          if (message.body.isNotEmpty)
+          if (message.body.isNotEmpty && !(message.isTriangleVideo && message.body == 'Triangle video'))
             _MessageText(
               text: message.body,
               style: TextStyle(
@@ -447,6 +455,12 @@ class MessageBubble extends StatelessWidget {
   }
 
   String _replyPreview(MessageReplyModel reply) {
+    if ((reply.videoUrl ?? '').isNotEmpty || reply.kind == 'triangle_video') {
+      if (reply.body.isNotEmpty && reply.body != 'Triangle video') {
+        return 'Triangle video - ${reply.body}';
+      }
+      return 'Triangle video';
+    }
     if ((reply.imageUrl ?? '').isNotEmpty && reply.body.isNotEmpty) {
       return 'Photo - ${reply.body}';
     }
@@ -472,6 +486,381 @@ class MessageBubble extends StatelessWidget {
         return timeLabel;
     }
   }
+}
+
+class _TriangleVideoTile extends StatefulWidget {
+  const _TriangleVideoTile({
+    required this.videoUrl,
+    required this.isOwn,
+    required this.caption,
+    this.onLoaded,
+  });
+
+  final String? videoUrl;
+  final bool isOwn;
+  final String caption;
+  final VoidCallback? onLoaded;
+
+  @override
+  State<_TriangleVideoTile> createState() => _TriangleVideoTileState();
+}
+
+class _TriangleVideoTileState extends State<_TriangleVideoTile> {
+  VideoPlayerController? _controller;
+  Timer? _controlsTimer;
+  bool _loading = false;
+  bool _showControls = true;
+  String? _error;
+
+  bool get _hasVideo => (widget.videoUrl ?? '').isNotEmpty;
+  bool get _isInitialized => _controller?.value.isInitialized ?? false;
+
+  @override
+  void dispose() {
+    _controlsTimer?.cancel();
+    unawaited(_controller?.dispose() ?? Future<void>.value());
+    super.dispose();
+  }
+
+  Future<void> _handleTap() async {
+    if (!_hasVideo || _loading) {
+      return;
+    }
+    if (!_isInitialized) {
+      await _initializeAndPlay();
+      return;
+    }
+    final controller = _controller!;
+    if (controller.value.isPlaying) {
+      await controller.pause();
+      _controlsTimer?.cancel();
+      if (mounted) {
+        setState(() {
+          _showControls = true;
+        });
+      }
+      return;
+    }
+    await controller.play();
+    _scheduleControlsHide();
+    if (mounted) {
+      setState(() {
+        _showControls = true;
+      });
+    }
+  }
+
+  Future<void> _initializeAndPlay() async {
+    final rawUrl = widget.videoUrl;
+    final uri = rawUrl == null ? null : Uri.tryParse(rawUrl);
+    if (uri == null) {
+      setState(() {
+        _error = 'Could not open the video';
+      });
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+      _showControls = true;
+    });
+    final controller = VideoPlayerController.networkUrl(uri);
+    try {
+      await controller.initialize();
+      await controller.setLooping(true);
+      controller.addListener(_handleControllerChanged);
+      await controller.play();
+      await _controller?.dispose();
+      _controller = controller;
+      widget.onLoaded?.call();
+      _scheduleControlsHide();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+      });
+    } catch (_) {
+      await controller.dispose();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _error = 'Could not load the video';
+      });
+    }
+  }
+
+  void _handleControllerChanged() {
+    if (!mounted) {
+      return;
+    }
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+    if (controller.value.position >= controller.value.duration &&
+        controller.value.duration > Duration.zero &&
+        !controller.value.isPlaying) {
+      _showControls = true;
+    }
+    setState(() {});
+  }
+
+  void _scheduleControlsHide() {
+    _controlsTimer?.cancel();
+    _controlsTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) {
+        return;
+      }
+      final controller = _controller;
+      if (controller != null && controller.value.isPlaying) {
+        setState(() {
+          _showControls = false;
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = widget.isOwn ? const Color(0xFF4A88A7) : const Color(0xFF316079);
+    final topGlow = widget.isOwn ? const Color(0xFF76ECDA) : const Color(0xFF5FC3E0);
+    final bottomGlow = widget.isOwn ? const Color(0xFF14384A) : const Color(0xFF0F2432);
+    final controller = _controller;
+    final isPlaying = controller?.value.isPlaying ?? false;
+    final isBuffering = controller?.value.isBuffering ?? false;
+    final progress = _isInitialized && controller!.value.duration > Duration.zero
+        ? controller.value.position.inMilliseconds / controller.value.duration.inMilliseconds
+        : 0.0;
+
+    return GestureDetector(
+      onTap: _handleTap,
+      child: SizedBox(
+        width: 248,
+        height: 214,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                    center: const Alignment(0, -0.15),
+                    radius: 0.92,
+                    colors: [
+                      topGlow.withOpacity(0.22),
+                      bottomGlow.withOpacity(0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: ClipPath(
+                clipper: _TriangleClipper(),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        topGlow.withOpacity(0.9),
+                        bottomGlow,
+                      ],
+                    ),
+                    border: Border.all(color: borderColor, width: 1.7),
+                    boxShadow: [
+                      BoxShadow(
+                        color: topGlow.withOpacity(0.24),
+                        blurRadius: 22,
+                        spreadRadius: -12,
+                        offset: const Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (_isInitialized && controller != null)
+                        FittedBox(
+                          fit: BoxFit.cover,
+                          alignment: Alignment.center,
+                          child: SizedBox(
+                            width: controller.value.size.width,
+                            height: controller.value.size.height,
+                            child: VideoPlayer(controller),
+                          ),
+                        )
+                      else
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                topGlow.withOpacity(0.45),
+                                bottomGlow.withOpacity(0.92),
+                              ],
+                            ),
+                          ),
+                        ),
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                const Color(0x33070F16),
+                                const Color(0x00070F16),
+                                const Color(0xD9070F16),
+                              ],
+                              stops: const [0.0, 0.45, 1.0],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 16,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xCC071116),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: borderColor.withOpacity(0.9)),
+                            ),
+                            child: Text(
+                              _isInitialized
+                                  ? (isPlaying ? 'PLAYING NOW' : 'READY TO PLAY')
+                                  : 'TRIANGLE VIDEO',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.8,
+                                color: Color(0xFFF0FAFF),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (_loading || isBuffering)
+                        const Center(
+                          child: SizedBox(
+                            width: 34,
+                            height: 34,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.8,
+                              color: Color(0xFFF5FBFF),
+                            ),
+                          ),
+                        )
+                      else if (_error != null)
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 30),
+                            child: Text(
+                              _error!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFFF3F7FA),
+                                fontWeight: FontWeight.w700,
+                                height: 1.3,
+                              ),
+                            ),
+                          ),
+                        )
+                      else if (_showControls || !_isInitialized || !isPlaying)
+                        Center(
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            width: 68,
+                            height: 68,
+                            decoration: BoxDecoration(
+                              color: _hasVideo ? const Color(0xEAF6FCFF) : const Color(0x88EAF6FC),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.2),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              _hasVideo && _isInitialized && isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              size: 38,
+                              color: _hasVideo ? const Color(0xFF092130) : const Color(0xFF5C6975),
+                            ),
+                          ),
+                        ),
+                      Positioned(
+                        left: 18,
+                        right: 18,
+                        bottom: 20,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_isInitialized)
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(999),
+                                child: LinearProgressIndicator(
+                                  value: progress.clamp(0.0, 1.0),
+                                  minHeight: 4,
+                                  backgroundColor: const Color(0x4DF5FBFF),
+                                  valueColor: AlwaysStoppedAnimation<Color>(topGlow),
+                                ),
+                              ),
+                            if (_isInitialized) const SizedBox(height: 8),
+                            Text(
+                              _error ??
+                                  (_hasVideo
+                                      ? (widget.caption.trim().isEmpty ? 'Tap to play' : widget.caption)
+                                      : 'Uploading video...'),
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFFF4F7FA),
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                height: 1.25,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TriangleClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    return Path()
+      ..moveTo(size.width / 2, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
 
 class _DesktopContextMenuRegion extends StatelessWidget {

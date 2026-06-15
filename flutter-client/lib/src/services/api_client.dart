@@ -288,6 +288,29 @@ class ApiClient {
     return MessageModel.fromJson(_unwrapJsonObject(response));
   }
 
+  Future<MessageModel> sendTriangleVideoMessage(
+    String chatId, {
+    required List<int> bytes,
+    required String filename,
+    String body = '',
+    String? replyToMessageId,
+    String? clientMessageId,
+  }) async {
+    final response = await _sendMultipart(
+      'POST',
+      '/chats/$chatId/triangle-videos',
+      fileField: 'file',
+      fileBytes: bytes,
+      filename: filename,
+      fields: {
+        'body': body,
+        if (replyToMessageId != null && replyToMessageId.isNotEmpty) 'reply_to_message_id': replyToMessageId,
+        if (clientMessageId != null && clientMessageId.isNotEmpty) 'client_message_id': clientMessageId,
+      },
+    );
+    return MessageModel.fromJson(_unwrapJsonObject(response));
+  }
+
   Future<ChatModel> createDirectChat(String email) async {
     final response = await _send(
       'POST',
@@ -648,6 +671,21 @@ class ApiClient {
     }
     if (lower.endsWith('.gif')) {
       return MediaType('image', 'gif');
+    }
+    if (lower.endsWith('.mp4')) {
+      return MediaType('video', 'mp4');
+    }
+    if (lower.endsWith('.mov')) {
+      return MediaType('video', 'quicktime');
+    }
+    if (lower.endsWith('.webm')) {
+      return MediaType('video', 'webm');
+    }
+    if (lower.endsWith('.m4v')) {
+      return MediaType('video', 'x-m4v');
+    }
+    if (lower.endsWith('.mkv')) {
+      return MediaType('video', 'x-matroska');
     }
     return MediaType('application', 'octet-stream');
   }
